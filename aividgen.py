@@ -1,7 +1,6 @@
 import streamlit as st
-from streamlit.components.v1 import html
-import time
 from PIL import Image
+import time
 
 def set_page_config():
     """تعيين إعدادات الصفحة"""
@@ -10,7 +9,7 @@ def set_page_config():
 # إعداد الصفحة
 set_page_config()
 
-# إنشاء واجهة جافا سكريبت مخصصة
+# إنشاء واجهة CSS مخصصة
 CSS = """
 <style>
 body {
@@ -20,26 +19,20 @@ body {
 }
 
 /* خلفية الوضع النهاري والليلي */
-body[data-theme='light'] {
-    background-color: #f0f0f0;
-    color: #333;
-}
-body[data-theme='dark'] {
-    background-color: #121212;
-    color: #eee;
+[data-testid="stAppViewContainer"] {
+    background-color: var(--background-color);
+    color: var(--text-color);
 }
 
 /* الزر الرئيسي */
-button {
+.stButton>button {
     background: linear-gradient(to right, #4facfe, #00f2fe);
+    color: white;
     border: none;
     padding: 10px 20px;
-    color: white;
-    font-size: 1em;
     border-radius: 5px;
-    cursor: pointer;
 }
-button:hover {
+.stButton>button:hover {
     background: linear-gradient(to left, #4facfe, #00f2fe);
 }
 
@@ -53,17 +46,36 @@ h1 {
 """
 
 # إدراج التنسيق
-html(CSS, unsafe_allow_html=True)
+st.markdown(CSS, unsafe_allow_html=True)
 
 # تحديد الوضع الليلي والنهاري
 st.sidebar.title("خيارات العرض")
 mode = st.sidebar.radio("اختر الوضع:", ["نهار", "ليل"], index=0)
-st.write(f"<body data-theme='{ 'light' if mode == 'نهار' else 'dark' }'>", unsafe_allow_html=True)
+
+# تعيين متغيرات CSS حسب الوضع
+if mode == "نهار":
+    st.markdown("""
+        <style>
+        :root {
+            --background-color: #f0f0f0;
+            --text-color: #333;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+        <style>
+        :root {
+            --background-color: #121212;
+            --text-color: #eee;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
 # واجهة التطبيق
 st.title("First Order Motion Model")
 
-# اختيار الوضعية (تحريك صورة أو موجه لإنشاء الفيديو)
+# اختيار الوضعية
 choice = st.radio("اختر العملية:", ["تحريك صورة", "موجه لإنشاء فيديو"])
 
 if choice == "تحريك صورة":
@@ -90,7 +102,9 @@ elif choice == "موجه لإنشاء فيديو":
         st.success("تم إنشاء الفيديو بنجاح!")
         st.video("https://www.example.com/sample-video.mp4")  # وضع رابط عينة
 
-# تضمين حقوق وإضافة جمالية
-st.markdown("""<footer style='text-align: center;'>
-    <p>&copy; 2024 First Order Motion Model - All rights reserved</p>
-</footer>""", unsafe_allow_html=True)
+# تضمين حقوق
+st.markdown("""
+<footer style='text-align: center; padding: 20px;'>
+    <p>&copy; EASYKW</p>
+</footer>
+""", unsafe_allow_html=True)
