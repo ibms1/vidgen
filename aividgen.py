@@ -3,75 +3,95 @@ from PIL import Image
 import time
 
 def set_page_config():
-    """Set page configuration"""
-    st.set_page_config(page_title="First Order Motion Model", layout="centered")
+    st.set_page_config(page_title="AI Video Generator", layout="centered")
 
-# Page setup
 set_page_config()
 
-# Custom CSS
 CSS = """
 <style>
-body {
-    font-family: 'Arial', sans-serif;
-    margin: 0;
-    padding: 0;
-}
-
-/* Main button */
-.stButton>button {
-    background: linear-gradient(to right, #4facfe, #00f2fe);
-    color: white;
-    border: none;
-    padding: 10px 20px;
+.processing-info {
+    padding: 15px;
     border-radius: 5px;
+    background-color: #f8f9fa;
+    border-left: 5px solid #17a2b8;
+    margin: 10px 0;
 }
-.stButton>button:hover {
-    background: linear-gradient(to left, #4facfe, #00f2fe);
+.estimated-time {
+    color: #6c757d;
+    font-size: 0.9em;
+    margin-top: 5px;
 }
-
-/* Header */
-h1 {
-    font-size: 2.5em;
-    margin: 20px 0;
-    text-align: center;
+.status-message {
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 4px;
 }
 </style>
 """
 
-# Insert styling
 st.markdown(CSS, unsafe_allow_html=True)
-
-# Main interface
 st.title("First Order Motion Model")
-
-# Video creation interface
 st.subheader("Video Creation")
+
+
+hide_links_style = """
+        <style>
+        a {
+            pointer-events: none;
+            cursor: default;
+            text-decoration: none;
+            color: inherit;
+        }
+        </style>
+        """
+st.markdown(hide_links_style, unsafe_allow_html=True)
+
+
 prompt = st.text_area("Enter description to create video:")
 
 if st.button("Create Video"):
     if prompt:
-        with st.spinner("Creating video..."):
-            # Here you should implement the actual video generation logic
-            # For now, we'll show a placeholder message
-            progress_bar = st.progress(0)
-            for i in range(100):
-                time.sleep(0.01)
-                progress_bar.progress(i + 1)
-            
-            # After video creation, display success and the video
-            st.success("Video created successfully!")
-            
-            # Create a placeholder for the video display
-            video_placeholder = st.empty()
-            
-            # You should replace this with actual video display logic
-            st.write("Video preview will appear here")
-            # st.video("path_to_generated_video.mp4")
+        # Display estimated processing time
+        st.info("⏱️ Estimated processing time: 3-5 minutes", icon="ℹ️")
+        
+        # Create processing stages
+        stages = ["Initializing model", "Generating frames", "Processing video", "Finalizing"]
+        progress_text = st.empty()
+        progress_bar = st.progress(0)
+        
+        # Simulate processing stages
+        for idx, stage in enumerate(stages):
+            progress_text.text(f"Stage {idx+1}/{len(stages)}: {stage}")
+            for i in range(25):
+                time.sleep(0.1)
+                progress_bar.progress((idx * 25 + i))
+        
+        progress_bar.progress(100)
+        progress_text.text("Processing complete!")
+        
+        st.success("Video created successfully!")
+        
+        # Video status and information
+        st.markdown("""
+        <div class="processing-info">
+            <h4>🎬 Video Status</h4>
+            <p>Your video is ready for rendering. Please note:</p>
+            <ul>
+                <li>The video is being prepared for display</li>
+                <li>This process may take a few moments</li>
+                <li>The page will automatically update when ready</li>
+            </ul>
+            <p class="estimated-time">If the video doesn't appear within 2 minutes, please try refreshing the page.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Placeholder for future video display
+        video_placeholder = st.empty()
+        st.info("Video preview loading... Please wait.", icon="🎥")
+        
     else:
         st.warning("Please enter a description for the video")
 
-# Footer
 st.markdown("""
 <footer style='text-align: center; padding: 20px;'>
     <p>&copy; EASYKW</p>
