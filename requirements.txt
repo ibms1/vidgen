@@ -5,5 +5,4 @@ numpy
 opencv-python
 moviepy
 pillow
-tempfile
 python-ffmpeg
