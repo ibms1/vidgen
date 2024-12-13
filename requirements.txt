@@ -1,9 +1,10 @@
 streamlit
+numpy
+Pillow
+opencv-python-headless
+moviepy
+imageio-ffmpeg
+decorator
+proglog
 torch
 torchvision
-numpy
-opencv-python
-moviepy
-pillow
-python-ffmpeg
-opencv-python-headless
