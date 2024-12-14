@@ -1,27 +1,43 @@
-import streamlit as st
-import tempfile
+import argparse
 import os
 import time
 import cv2
 import numpy as np
 import torch
-from PIL import Image
-import shutil
+from PIL import Image, ImageDraw, ImageFont
+import tempfile
 from typing import Union
 import imageio
 import warnings
 warnings.filterwarnings("ignore")
 
-def create_temp_directory():
-    """إنشاء مجلد مؤقت"""
-    return tempfile.mkdtemp()
-
-def cleanup_temp_directory(temp_dir: str):
-    """تنظيف المجلد المؤقت"""
+def create_text_image(text: str, width: int = 512, height: int = 512) -> Image.Image:
+    """
+    تحويل النص إلى صورة
+    """
+    # إنشاء صورة بيضاء
+    image = Image.new('RGB', (width, height), 'white')
+    draw = ImageDraw.Draw(image)
+    
     try:
-        shutil.rmtree(temp_dir)
-    except Exception as e:
-        st.warning(f"خطأ في تنظيف المجلد المؤقت: {e}")
+        # محاولة تحميل خط عربي إذا كان متوفراً
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 40)
+    except:
+        # استخدام الخط الافتراضي إذا لم يكن الخط العربي متوفراً
+        font = ImageFont.load_default()
+    
+    # حساب موقع النص
+    text_bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_height = text_bbox[3] - text_bbox[1]
+    
+    x = (width - text_width) // 2
+    y = (height - text_height) // 2
+    
+    # رسم النص
+    draw.text((x, y), text, fill='black', font=font)
+    
+    return image
 
 def load_first_order_model():
     """
@@ -49,7 +65,6 @@ def process_image(img_input: Union[str, np.ndarray, Image.Image]) -> torch.Tenso
     else:
         raise TypeError("نوع الإدخال غير مدعوم")
     
-    # تغيير الحجم وتحويل الصورة
     img = img.convert('RGB')
     img = img.resize((256, 256), Image.Resampling.LANCZOS)
     img = np.array(img, dtype=np.float32) / 255.0
@@ -76,7 +91,7 @@ def process_video(
     source_path: str,
     driving_path: str,
     output_path: str,
-    progress_callback=None
+    verbose: bool = True
 ) -> bool:
     """
     معالجة الفيديو بأكمله
@@ -99,108 +114,72 @@ def process_video(
             result_frame = generate_frame(model, source, driving)
             writer.append_data(result_frame)
             
-            if progress_callback:
-                progress = (frame_idx + 1) / total_frames
-                progress_callback(progress, frame_idx + 1, total_frames)
+            if verbose:
+                progress = (frame_idx + 1) / total_frames * 100
+                print(f"\rالتقدم: {progress:.1f}%", end="")
                 
+        if verbose:
+            print("\nاكتمل توليد الفيديو!")
+            
         cap.release()
         writer.close()
         return True
         
     except Exception as e:
-        st.error(f"خطأ في معالجة الفيديو: {str(e)}")
+        print(f"خطأ في معالجة الفيديو: {str(e)}")
         return False
 
 def main():
-    st.set_page_config(
-        page_title="مولد الفيديو المتحرك",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
+    parser = argparse.ArgumentParser(description='تحويل النص إلى فيديو متحرك')
+    parser.add_argument('--text', type=str, required=True, help='النص المراد تحويله')
+    parser.add_argument('--driving', type=str, required=True, help='مسار فيديو الحركة')
+    parser.add_argument('--output', type=str, required=True, help='مسار الفيديو الناتج')
+    parser.add_argument('--quiet', action='store_true', help='إيقاف عرض رسائل التقدم')
     
-    st.title("محول الصور إلى فيديو متحرك")
+    args = parser.parse_args()
     
-    # تحميل الملفات
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        source_image = st.file_uploader(
-            "صورة المصدر",
-            type=['png', 'jpg', 'jpeg'],
-            help="اختر صورة المصدر التي تريد تحريكها"
+    try:
+        # إنشاء مجلد مؤقت
+        temp_dir = tempfile.mkdtemp()
+        
+        # تحويل النص إلى صورة
+        print("جاري تحويل النص إلى صورة...")
+        text_image = create_text_image(args.text)
+        source_path = os.path.join(temp_dir, "text_image.png")
+        text_image.save(source_path)
+        
+        # تحميل النموذج
+        print("جاري تحميل النموذج...")
+        model = load_first_order_model()
+        
+        # معالجة الفيديو
+        print("جاري توليد الفيديو...")
+        start_time = time.time()
+        
+        success = process_video(
+            model,
+            source_path,
+            args.driving,
+            args.output,
+            verbose=not args.quiet
         )
         
-    with col2:
-        driving_video = st.file_uploader(
-            "فيديو الحركة",
-            type=['mp4', 'avi'],
-            help="اختر فيديو الحركة المرجعي"
-        )
+        if success:
+            end_time = time.time()
+            processing_time = end_time - start_time
+            print(f"\nتم إنشاء الفيديو بنجاح في {processing_time:.1f} ثانية")
+            print(f"تم حفظ الفيديو في: {args.output}")
+        
+    except Exception as e:
+        print(f"حدث خطأ: {str(e)}")
     
-    if st.button("بدء التحويل", use_container_width=True):
-        if not all([source_image, driving_video]):
-            st.warning("يرجى تحميل جميع الملفات المطلوبة")
-            return
-            
+    finally:
+        # تنظيف الملفات المؤقتة
         try:
-            temp_dir = create_temp_directory()
-            
-            # حفظ الملفات المؤقتة
-            source_temp = os.path.join(temp_dir, "source.png")
-            Image.open(source_image).save(source_temp)
-            
-            driving_temp = os.path.join(temp_dir, "driving.mp4")
-            with open(driving_temp, 'wb') as f:
-                f.write(driving_video.read())
-            
-            output_temp = os.path.join(temp_dir, "result.mp4")
-            
-            # تحميل النموذج
-            with st.spinner("جاري تحميل النموذج..."):
-                model = load_first_order_model()
-            
-            # إعداد عناصر التقدم
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            def update_progress(progress, current_frame, total_frames):
-                progress_bar.progress(progress)
-                status_text.text(f"معالجة الإطار {current_frame}/{total_frames}")
-            
-            # معالجة الفيديو
-            start_time = time.time()
-            success = process_video(
-                model,
-                source_temp,
-                driving_temp,
-                output_temp,
-                update_progress
-            )
-            
-            if success:
-                end_time = time.time()
-                processing_time = end_time - start_time
-                
-                st.success(f"تم إنشاء الفيديو بنجاح! (المدة: {processing_time:.1f} ثانية)")
-                
-                # عرض النتيجة
-                st.video(output_temp)
-                
-                # زر التحميل
-                with open(output_temp, 'rb') as file:
-                    st.download_button(
-                        label="تحميل الفيديو",
-                        data=file,
-                        file_name="animated_video.mp4",
-                        mime="video/mp4"
-                    )
-            
-            cleanup_temp_directory(temp_dir)
-            
-        except Exception as e:
-            st.error(f"حدث خطأ غير متوقع: {str(e)}")
-            if 'temp_dir' in locals():
-                cleanup_temp_directory(temp_dir)
+            import shutil
+            shutil.rmtree(temp_dir)
+        except:
+            pass
 
 if __name__ == "__main__":
     main()
