@@ -4,163 +4,201 @@ import os
 import time
 import cv2
 import numpy as np
-from moviepy.editor import VideoFileClip, ImageClip, concatenate_videoclips
 import torch
 from PIL import Image
 import shutil
-
-def set_page_config():
-    st.set_page_config(
-        page_title="AI Video Generator",
-        layout="centered",
-        initial_sidebar_state="collapsed"
-    )
+from typing import Union
+import imageio
+import warnings
+warnings.filterwarnings("ignore")
 
 def create_temp_directory():
-    """Create a temporary directory for video processing"""
-    temp_dir = tempfile.mkdtemp()
-    return temp_dir
+    """إنشاء مجلد مؤقت"""
+    return tempfile.mkdtemp()
 
-def cleanup_temp_directory(temp_dir):
-    """Clean up temporary directory and its contents"""
+def cleanup_temp_directory(temp_dir: str):
+    """تنظيف المجلد المؤقت"""
     try:
         shutil.rmtree(temp_dir)
     except Exception as e:
-        st.error(f"Error cleaning up temporary files: {e}")
+        st.warning(f"خطأ في تنظيف المجلد المؤقت: {e}")
 
-def generate_video_frames(prompt, temp_dir, progress_bar, status_text):
-    """Generate video frames based on the prompt"""
+def load_first_order_model():
+    """
+    تحميل نموذج First Order Motion
+    """
+    from first_order_model import FirstOrderModel
+    model = FirstOrderModel()
+    if torch.cuda.is_available():
+        model = model.cuda()
+    else:
+        model = model.cpu()
+    model.eval()
+    return model
+
+def process_image(img_input: Union[str, np.ndarray, Image.Image]) -> torch.Tensor:
+    """
+    معالجة الصورة للنموذج
+    """
+    if isinstance(img_input, str):
+        img = Image.open(img_input)
+    elif isinstance(img_input, np.ndarray):
+        img = Image.fromarray(img_input)
+    elif isinstance(img_input, Image.Image):
+        img = img_input
+    else:
+        raise TypeError("نوع الإدخال غير مدعوم")
+    
+    # تغيير الحجم وتحويل الصورة
+    img = img.convert('RGB')
+    img = img.resize((256, 256), Image.Resampling.LANCZOS)
+    img = np.array(img, dtype=np.float32) / 255.0
+    img = np.transpose(img, (2, 0, 1))
+    img = torch.from_numpy(img).unsqueeze(0)
+    
+    if torch.cuda.is_available():
+        img = img.cuda()
+    return img
+
+def generate_frame(model, source: torch.Tensor, driving: torch.Tensor) -> np.ndarray:
+    """
+    توليد إطار واحد
+    """
+    with torch.no_grad():
+        predictions = model(source, driving)
+        result = predictions['prediction'].cpu().numpy()[0]
+        result = np.transpose(result, (1, 2, 0))
+        result = (result * 255).clip(0, 255).astype(np.uint8)
+        return result
+
+def process_video(
+    model,
+    source_path: str,
+    driving_path: str,
+    output_path: str,
+    progress_callback=None
+) -> bool:
+    """
+    معالجة الفيديو بأكمله
+    """
     try:
-        # Create a sequence of frames
-        frames = []
-        frame_count = 60  # 60 frames for 2 seconds at 30fps
+        source = process_image(source_path)
+        cap = cv2.VideoCapture(driving_path)
         
-        for i in range(frame_count):
-            # Create a blank frame
-            frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        
+        writer = imageio.get_writer(output_path, fps=fps)
+        
+        for frame_idx in range(total_frames):
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            driving = process_image(frame)
+            result_frame = generate_frame(model, source, driving)
+            writer.append_data(result_frame)
             
-            # Add some animation (example: moving text)
-            cv2.putText(
-                frame,
-                f"Frame {i+1}",
-                (200 + i*3, 240),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (255, 255, 255),
-                2
-            )
-            
-            frames.append(frame)
-            
-            # Update progress
-            progress = (i + 1) / frame_count
-            progress_bar.progress(progress)
-            status_text.text(f"Generating frame {i+1}/{frame_count}")
-            
-        # Save frames as video
-        output_path = os.path.join(temp_dir, "generated_video.mp4")
-        height, width = frames[0].shape[:2]
-        
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, 30, (width, height))
-        
-        for frame in frames:
-            out.write(frame)
-        
-        out.release()
-        
-        return output_path
+            if progress_callback:
+                progress = (frame_idx + 1) / total_frames
+                progress_callback(progress, frame_idx + 1, total_frames)
+                
+        cap.release()
+        writer.close()
+        return True
         
     except Exception as e:
-        st.error(f"Error in video generation: {e}")
-        return None
+        st.error(f"خطأ في معالجة الفيديو: {str(e)}")
+        return False
 
 def main():
-    set_page_config()
-    
-    # Custom CSS
-    st.markdown("""
-        <style>
-        .stApp {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        .status-container {
-            padding: 20px;
-            background-color: #f0f2f6;
-            border-radius: 10px;
-            margin: 20px 0;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    st.title("AI Video Generator")
-    st.subheader("Video Creation")
-    
-    # Text input for video description
-    prompt = st.text_area(
-        "Enter description to create video:",
-        placeholder="Describe the video you want to create..."
+    st.set_page_config(
+        page_title="مولد الفيديو المتحرك",
+        layout="wide",
+        initial_sidebar_state="expanded"
     )
     
-    if st.button("Create Video", key="create_video"):
-        if not prompt:
-            st.warning("Please enter a description for the video")
+    st.title("محول الصور إلى فيديو متحرك")
+    
+    # تحميل الملفات
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        source_image = st.file_uploader(
+            "صورة المصدر",
+            type=['png', 'jpg', 'jpeg'],
+            help="اختر صورة المصدر التي تريد تحريكها"
+        )
+        
+    with col2:
+        driving_video = st.file_uploader(
+            "فيديو الحركة",
+            type=['mp4', 'avi'],
+            help="اختر فيديو الحركة المرجعي"
+        )
+    
+    if st.button("بدء التحويل", use_container_width=True):
+        if not all([source_image, driving_video]):
+            st.warning("يرجى تحميل جميع الملفات المطلوبة")
             return
             
         try:
-            # Create temporary directory
             temp_dir = create_temp_directory()
             
-            # Create status containers
-            status_container = st.container()
-            with status_container:
-                st.markdown("<div class='status-container'>", unsafe_allow_html=True)
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                time_text = st.empty()
-                
-                # Process start time
-                start_time = time.time()
-                
-                # Generate video
-                video_path = generate_video_frames(
-                    prompt,
-                    temp_dir,
-                    progress_bar,
-                    status_text
-                )
-                
-                if video_path and os.path.exists(video_path):
-                    # Process end time
-                    end_time = time.time()
-                    processing_time = end_time - start_time
-                    
-                    # Update status
-                    status_text.text("Video generation completed!")
-                    time_text.text(f"Processing time: {processing_time:.2f} seconds")
-                    
-                    # Display video
-                    st.video(video_path)
-                    
-                    # Add download button
-                    with open(video_path, 'rb') as file:
-                        st.download_button(
-                            label="Download Video",
-                            data=file,
-                            file_name="generated_video.mp4",
-                            mime="video/mp4"
-                        )
-                else:
-                    st.error("Failed to generate video")
-                
-                st.markdown("</div>", unsafe_allow_html=True)
+            # حفظ الملفات المؤقتة
+            source_temp = os.path.join(temp_dir, "source.png")
+            Image.open(source_image).save(source_temp)
             
-            # Cleanup
+            driving_temp = os.path.join(temp_dir, "driving.mp4")
+            with open(driving_temp, 'wb') as f:
+                f.write(driving_video.read())
+            
+            output_temp = os.path.join(temp_dir, "result.mp4")
+            
+            # تحميل النموذج
+            with st.spinner("جاري تحميل النموذج..."):
+                model = load_first_order_model()
+            
+            # إعداد عناصر التقدم
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            def update_progress(progress, current_frame, total_frames):
+                progress_bar.progress(progress)
+                status_text.text(f"معالجة الإطار {current_frame}/{total_frames}")
+            
+            # معالجة الفيديو
+            start_time = time.time()
+            success = process_video(
+                model,
+                source_temp,
+                driving_temp,
+                output_temp,
+                update_progress
+            )
+            
+            if success:
+                end_time = time.time()
+                processing_time = end_time - start_time
+                
+                st.success(f"تم إنشاء الفيديو بنجاح! (المدة: {processing_time:.1f} ثانية)")
+                
+                # عرض النتيجة
+                st.video(output_temp)
+                
+                # زر التحميل
+                with open(output_temp, 'rb') as file:
+                    st.download_button(
+                        label="تحميل الفيديو",
+                        data=file,
+                        file_name="animated_video.mp4",
+                        mime="video/mp4"
+                    )
+            
             cleanup_temp_directory(temp_dir)
             
         except Exception as e:
-            st.error(f"An error occurred: {e}")
+            st.error(f"حدث خطأ غير متوقع: {str(e)}")
             if 'temp_dir' in locals():
                 cleanup_temp_directory(temp_dir)
 
