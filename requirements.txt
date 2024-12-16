@@ -1,5 +1,6 @@
-transformers
-torch
-Pillow
-imageio
 streamlit
+moviepy
+torch
+transformers
+Pillow
+numpy

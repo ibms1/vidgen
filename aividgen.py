@@ -1,41 +1,50 @@
-# Importing required libraries
-import torch
-from transformers import pipeline
-import numpy as np
-from PIL import Image
-import imageio
 import streamlit as st
+import torch
+from moviepy.editor import ImageSequenceClip
+from PIL import Image
+import numpy as np
 
-# تحميل النموذج من Hugging Face
-model = pipeline("image-generation", model="huggingface/biggan-deep-256")
+# نموذج خفيف لتحويل النص إلى صورة (VQGAN+CLIP أو نموذج مشابه)
+# يمكنك استخدام نموذج جاهز من Hugging Face مثل CLIP-guided VQGAN
 
-# تحديد التصنيف (مثل cat, airplane)
-category = "cat"
+@st.cache_resource
+def generate_image_from_text(prompt):
+    # استبدل هذا باستخدام نموذج لتحويل النص إلى صورة
+    # هنا نستخدم فقط صورة عشوائية كمثال
+    image = np.random.rand(512, 512, 3) * 255
+    image = Image.fromarray(image.astype(np.uint8))
+    return image
 
-# توليد صورة
-def generate_image(category):
-    generated_image = model(category)
-    return generated_image[0]['image']
+# واجهة المستخدم
+st.title("Text-to-Video Generator")
+prompt = st.text_input("Enter your text description:")
 
-# توليد مجموعة من الصور
-def generate_images(num_images=10, category="cat"):
-    images = []
-    for _ in range(num_images):
-        img = generate_image(category)
-        images.append(img)
-    return images
+if st.button("Generate Video"):
+    if prompt:
+        st.write("Generating video...")
 
-# تحويل الصور المولدة إلى صور متحركة (GIF)
-def create_gif(images, filename="animated_image.gif", duration=0.5):
-    # تحويل صور PIL إلى numpy arrays
-    images_np = [np.array(img) for img in images]
-    imageio.mimsave(filename, images_np, duration=duration)
+        # توليد مجموعة من الصور بناءً على النص
+        images = []
+        for _ in range(30):  # عدد الإطارات في الفيديو
+            image = generate_image_from_text(prompt)
+            images.append(image)
 
-# توليد 10 صور (على سبيل المثال)
-images = generate_images(10, category)
+        # تحويل الصور إلى فيديو باستخدام MoviePy
+        video_clip = ImageSequenceClip([np.array(img) for img in images], fps=24)
 
-# إنشاء GIF من الصور المولدة
-create_gif(images, filename="cat_animation.gif", duration=0.5)
+        # حفظ الفيديو في الذاكرة
+        video_path = "/tmp/generated_video.mp4"
+        video_clip.write_videofile(video_path)
 
-# عرض الـ GIF في Streamlit
-st.image("cat_animation.gif", caption="القط المتحرك", use_column_width=True)
+        # عرض الفيديو في واجهة Streamlit
+        st.video(video_path)
+
+        # توفير رابط لتحميل الفيديو
+        st.download_button(
+            label="Download Video",
+            data=open(video_path, "rb").read(),
+            file_name="generated_video.mp4",
+            mime="video/mp4"
+        )
+    else:
+        st.write("Please enter a text description!")
