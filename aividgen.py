@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 import torch
 import numpy as np
 import imageio
+import math
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -30,7 +31,29 @@ def create_text_image(text: str, width: int = 512, height: int = 512) -> Image.I
     draw.text((x, y), text, fill='black', font=font)
     return image
 
+def create_motion_frames(num_frames=60):
+    """إنشاء إطارات الحركة التلقائية"""
+    frames = []
+    for i in range(num_frames):
+        # إنشاء مصفوفة فارغة
+        frame = np.zeros((256, 256, 3), dtype=np.uint8)
+        frame.fill(255)  # جعل الخلفية بيضاء
+        
+        # إضافة بعض التأثيرات البصرية البسيطة
+        angle = 2 * math.pi * i / num_frames
+        scale = 1.0 + 0.2 * math.sin(angle)
+        
+        # إضافة بعض الألوان المتغيرة في الخلفية
+        color_value = int(128 + 127 * math.sin(angle))
+        frame[:, :, 0] = color_value  # تغيير القناة الحمراء
+        
+        frames.append(frame)
+    return frames
+
 def process_image(img):
+    if isinstance(img, np.ndarray):
+        img = Image.fromarray(img)
+    
     img = img.convert('RGB')
     img = img.resize((256, 256), Image.Resampling.LANCZOS)
     img = np.array(img, dtype=np.float32) / 255.0
@@ -61,58 +84,47 @@ def main():
     st.set_page_config(page_title="توليد فيديو من النص")
     
     st.title("توليد فيديو من النص")
-    st.write("قم بإدخال النص وتحميل فيديو الحركة لإنشاء فيديو متحرك")
+    st.write("قم بإدخال النص لإنشاء فيديو متحرك")
 
     # إدخال النص
     text = st.text_input("أدخل النص:", value="اكتب نصك هنا")
 
-    # تحميل فيديو الحركة
-    driving_video = st.file_uploader("قم بتحميل فيديو الحركة:", type=['mp4', 'avi'])
-
     if st.button("توليد الفيديو"):
-        if not text or not driving_video:
-            st.error("يرجى إدخال النص وتحميل فيديو الحركة")
+        if not text:
+            st.error("يرجى إدخال النص")
             return
 
         try:
             with st.spinner("جاري تحميل النموذج..."):
                 model = load_model()
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as source_file, \
-                 tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as driving_file, \
-                 tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as output_file:
-
-                # حفظ صورة النص
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as output_file:
+                # إنشاء صورة النص
                 text_image = create_text_image(text)
-                text_image.save(source_file.name)
                 st.image(text_image, caption="صورة النص المولدة", use_column_width=True)
 
-                # حفظ فيديو الحركة
-                with open(driving_file.name, 'wb') as f:
-                    f.write(driving_video.getvalue())
-
+                # إنشاء إطارات الحركة
+                motion_frames = create_motion_frames()
+                
                 # معالجة الفيديو
                 source = process_image(text_image)
-                reader = imageio.get_reader(driving_file.name)
-                fps = reader.get_meta_data()['fps']
-                writer = imageio.get_writer(output_file.name, fps=fps)
+                writer = imageio.get_writer(output_file.name, fps=30)
 
                 # إضافة شريط التقدم
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                frames = reader.count_frames()
-                for i, frame in enumerate(reader):
-                    driving = process_image(Image.fromarray(frame))
+                total_frames = len(motion_frames)
+                for i, frame in enumerate(motion_frames):
+                    driving = process_image(frame)
                     result_frame = generate_frame(model, source, driving)
                     writer.append_data(result_frame)
                     
                     # تحديث التقدم
-                    progress = (i + 1) / frames
+                    progress = (i + 1) / total_frames
                     progress_bar.progress(progress)
                     status_text.text(f"جاري المعالجة... {progress * 100:.1f}%")
 
-                reader.close()
                 writer.close()
 
                 # عرض الفيديو الناتج
@@ -122,11 +134,10 @@ def main():
                 st.success("تم إنشاء الفيديو بنجاح!")
 
                 # تنظيف الملفات المؤقتة
-                for file in [source_file.name, driving_file.name, output_file.name]:
-                    try:
-                        os.unlink(file)
-                    except:
-                        pass
+                try:
+                    os.unlink(output_file.name)
+                except:
+                    pass
 
         except Exception as e:
             st.error(f"حدث خطأ: {str(e)}")
