@@ -1,6 +1,7 @@
 streamlit
-moviepy
 torch
-transformers
-Pillow
+diffusers
+opencv-python
 numpy
+Pillow
+ffmpeg-python

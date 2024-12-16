@@ -1,50 +1,54 @@
 import streamlit as st
 import torch
-from moviepy.editor import ImageSequenceClip
-from PIL import Image
+import os
+import cv2
 import numpy as np
+from PIL import Image
 
-# نموذج خفيف لتحويل النص إلى صورة (VQGAN+CLIP أو نموذج مشابه)
-# يمكنك استخدام نموذج جاهز من Hugging Face مثل CLIP-guided VQGAN
+# إعدادات النموذج
+from diffusers import FluxPipeline
 
-@st.cache_resource
-def generate_image_from_text(prompt):
-    # استبدل هذا باستخدام نموذج لتحويل النص إلى صورة
-    # هنا نستخدم فقط صورة عشوائية كمثال
-    image = np.random.rand(512, 512, 3) * 255
-    image = Image.fromarray(image.astype(np.uint8))
-    return image
+# تحميل النموذج
+pipe = FluxPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
+pipe.enable_model_cpu_offload()
 
-# واجهة المستخدم
-st.title("Text-to-Video Generator")
+# واجهة المستخدم لإدخال النص
+st.title("Text to Video Generation")
 prompt = st.text_input("Enter your text description:")
 
-if st.button("Generate Video"):
-    if prompt:
-        st.write("Generating video...")
+# توليد الصور من النص
+if prompt:
+    st.write("Generating video...")
 
-        # توليد مجموعة من الصور بناءً على النص
-        images = []
-        for _ in range(30):  # عدد الإطارات في الفيديو
-            image = generate_image_from_text(prompt)
-            images.append(image)
+    # توليد مجموعة من الصور
+    images = []
+    for i in range(10):  # لتوليد 10 صور كمثال
+        image = pipe(
+            prompt,
+            height=512,
+            width=512,
+            guidance_scale=7.5,
+            num_inference_steps=50,
+            max_sequence_length=512,
+            generator=torch.Generator("cpu").manual_seed(i)
+        ).images[0]
+        images.append(np.array(image))
 
-        # تحويل الصور إلى فيديو باستخدام MoviePy
-        video_clip = ImageSequenceClip([np.array(img) for img in images], fps=24)
+    # إنشاء الفيديو من الصور
+    video_path = "generated_video.mp4"
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video = cv2.VideoWriter(video_path, fourcc, 1, (512, 512))
 
-        # حفظ الفيديو في الذاكرة
-        video_path = "/tmp/generated_video.mp4"
-        video_clip.write_videofile(video_path)
+    for img in images:
+        video.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))  # تحويل الصورة من RGB إلى BGR
 
-        # عرض الفيديو في واجهة Streamlit
-        st.video(video_path)
+    video.release()
 
-        # توفير رابط لتحميل الفيديو
-        st.download_button(
-            label="Download Video",
-            data=open(video_path, "rb").read(),
-            file_name="generated_video.mp4",
-            mime="video/mp4"
-        )
-    else:
-        st.write("Please enter a text description!")
+    # عرض الفيديو في واجهة التطبيق
+    st.video(video_path)
+
+    # السماح للمستخدم بتحميل الفيديو إذا رغب
+    st.download_button("Download Video", video_path)
+
+    # حذف الفيديو بعد العرض
+    os.remove(video_path)
