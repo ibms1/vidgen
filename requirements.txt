@@ -1,4 +1,8 @@
 streamlit
 torch
 diffusers
-Pillow
+transformers
+pillow
+imageio
+numpy
+cairosvg
