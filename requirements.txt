@@ -1,10 +1,9 @@
 streamlit
-torch
-diffusers
-transformers
-pillow
-imageio
+google-generativeai
+moviepy
+edge-tts
+faster-whisper
+requests
 numpy
-cairosvg
-accelerate
-cairocffi
+beautifulsoup4
+ yt-dlp
